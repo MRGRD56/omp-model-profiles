@@ -334,6 +334,10 @@ describe("ProfilesDialog", () => {
 		expect(dialog.debugState().selectedProfile).toBeNull();
 		rendered = dialog.render(60).join("\n");
 		expect(rendered).toContain("> [ + New profile ]");
+		await dialog.processInput("\t");
+		expect(dialog.debugState().panel).toBe("profiles");
+		await dialog.processInput("\x1b[C");
+		expect(dialog.debugState().panel).toBe("profiles");
 
 		await dialog.processInput("\n");
 		expect(dialog.debugState().mode).toBe("create-profile");

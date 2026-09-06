@@ -542,9 +542,9 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			case "pick-effort":
 				return "↑/↓ effort · Enter assign · Esc models";
 			case "browse":
-				return this.#panel === "profiles"
-					? "Enter apply · n create · e rename · d delete · / search · Tab details · Esc close"
-					: "Enter pick · Tab profiles · Esc close";
+				if (this.#panel === "details") return "Enter pick · Tab profiles · Esc close";
+				if (!this.#currentProfile) return "Enter create · / search · Esc close";
+				return "Enter apply · n create · e rename · d delete · / search · Tab details · Esc close";
 		}
 	}
 
@@ -689,6 +689,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			return;
 		}
 		if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
+			if (this.#panel === "profiles" && !this.#currentProfile) return;
 			this.#panel = this.#panel === "profiles" ? "details" : "profiles";
 			this.#rebuildLists();
 			this.#tui.requestRender();
@@ -703,7 +704,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			return;
 		}
 		if (matchesKey(data, "right")) {
-			if (this.#panel !== "details") {
+			if (this.#panel !== "details" && this.#currentProfile) {
 				this.#panel = "details";
 				this.#rebuildLists();
 				this.#tui.requestRender();
