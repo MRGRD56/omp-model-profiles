@@ -5,7 +5,16 @@ import type { KeyId } from "@oh-my-pi/pi-tui";
 const DEFAULT_PROFILE_SHORTCUT: KeyId = "ctrl+alt+p";
 
 function profileShortcut(pi: ExtensionAPI): KeyId {
-	const extensionConfig = pi.pi.settings.getGlobalSettings().modelProfilesExtension;
+	let globalSettings: ReturnType<typeof pi.pi.settings.getGlobalSettings>;
+	try {
+		globalSettings = pi.pi.settings.getGlobalSettings();
+	} catch (error) {
+		if (error instanceof Error && error.message === "Settings not initialized. Call Settings.init() first.") {
+			return DEFAULT_PROFILE_SHORTCUT;
+		}
+		throw error;
+	}
+	const extensionConfig = globalSettings.modelProfilesExtension;
 	if (typeof extensionConfig !== "object" || extensionConfig === null || Array.isArray(extensionConfig)) {
 		return DEFAULT_PROFILE_SHORTCUT;
 	}

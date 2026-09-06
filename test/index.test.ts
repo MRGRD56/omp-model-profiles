@@ -56,6 +56,23 @@ describe("extension entry", () => {
 		expect(customCalled).toBe(false);
 	});
 
+	test("registers the default shortcut during install-time validation", () => {
+		const shortcuts: string[] = [];
+		const pi = {
+			registerCommand() {},
+			registerShortcut(shortcut: string) {
+				shortcuts.push(shortcut);
+			},
+			get pi(): never {
+				throw new Error("Settings not initialized. Call Settings.init() first.");
+			},
+		};
+
+		extension(pi as never);
+
+		expect(shortcuts).toEqual(["ctrl+alt+p"]);
+	});
+
 	test("uses the configured profile shortcut from config.yml", () => {
 		const shortcuts: string[] = [];
 		const pi = {
