@@ -185,7 +185,13 @@ omp plugin upgrade omp-model-profiles@<marketplace>
 
 Use `--scope user` or `--scope project` only when a specific installation scope must be targeted. Reload plugins or restart OMP after the upgrade, then verify `/profiles`.
 
-For a direct npm or GitHub source installation, reinstall the same source with `omp plugin install <source> --force`, then reload plugins. Document the exact source in `README.md` before offering that installation method.
+For the direct GitHub installation documented in `README.md`, reinstall the same source to update the user's installed copy:
+
+```sh
+omp plugin install github:MRGRD56/omp-model-profiles --force
+```
+
+Then reload plugins or restart OMP and verify `/profiles`. The GitHub shorthand is `github:user/repo`; do not add `@` before the GitHub username. Direct npm package syntax such as `@scope/package` requires a separately published npm package and must not be documented unless that package exists.
 
 ## Required completion gate
 

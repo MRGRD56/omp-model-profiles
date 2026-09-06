@@ -17,15 +17,13 @@ An [Oh My Pi](https://github.com/can1357/oh-my-pi) extension for saving and swit
 ## Requirements
 
 - Oh My Pi 18.1.11 or newer
-- Bun
 
 ## Installation
 
-Clone or download this repository, then run the following commands from its root:
+Install the extension directly from GitHub:
 
 ```sh
-bun install
-omp plugin link .
+omp plugin install github:MRGRD56/omp-model-profiles
 ```
 
 Reload plugins in an active OMP session:
