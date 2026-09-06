@@ -142,4 +142,19 @@ describe("applyProfile", () => {
 		expect(outcome.defaultModel).toBe("anthropic/claude");
 		expect(recorded.thinkingLevel()).toBe("high");
 	});
+	test("preserves max thinking suffix when switching the live session model", async () => {
+		const settings = asSettings(Object.assign(new FakeSettings(), { roleStorage: "global" }));
+		const models = resolvingModels(spec => providerModel(spec));
+		const recorded = session();
+		const outcome = await applyProfile(
+			profile({ default: "openai-codex/gpt-5.6-luna:max" }),
+			settings,
+			models,
+			recorded.api,
+		);
+		expect(outcome.ok).toBe(true);
+		expect(outcome.switchedDefault).toBe(true);
+		expect(outcome.defaultModel).toBe("openai-codex/gpt-5.6-luna");
+		expect(recorded.thinkingLevel()).toBe("max");
+	});
 });

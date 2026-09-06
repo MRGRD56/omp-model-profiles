@@ -90,7 +90,11 @@ export async function applyProfile<M extends ModelRef = ModelRef>(
 			if (ok) {
 				switchedDefault = true;
 				defaultModel = `${model.provider}/${model.id}`;
-				const level = parseModelString(defaultSelector)?.thinkingLevel;
+				const level = parseModelString(defaultSelector, {
+					allowMaxSuffix: true,
+					allowAutoAlias: true,
+					isLiteralModelId: (provider, id) => provider === model.provider && id === model.id,
+				})?.thinkingLevel;
 				if (level !== undefined && level !== AUTO_THINKING) {
 					session.setThinkingLevel(level);
 				}
