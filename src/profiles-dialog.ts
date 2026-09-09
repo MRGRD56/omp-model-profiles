@@ -1048,7 +1048,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		const roles = this.#currentRoles;
 		const items: SelectItem[] = roles.map(role => ({
 			value: role,
-			label: roleDisplayName(role, this.#deps.settings),
+			label: roleTag(role, this.#deps.settings) ?? role,
 			description: this.#roleDescription(profile, role),
 		}));
 
@@ -1069,10 +1069,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 
 	#roleDescription(profile: ModelProfile | undefined, role: string): string {
 		const selector = profile?.models[role];
-		const name = roleDisplayName(role, this.#deps.settings);
-		const tag = roleTag(role, this.#deps.settings);
-		const tagPart = tag && tag !== name ? ` · ${tag}` : "";
-		return `${selector ?? "Auto"}${tagPart}`;
+		return selector ?? "Auto";
 	}
 
 	#runAction<T>(

@@ -343,6 +343,44 @@ describe("ProfilesDialog", () => {
 		expect(dialog.debugState().mode).toBe("create-profile");
 	});
 
+	test("uses role tags as labels and selectors as descriptions", async () => {
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create(
+			{ default: "provider-a/model-1:high", designer: "provider-a/model-2" },
+			"Roles",
+		);
+
+		const settings = new FakeSettings();
+		settings.cycleOrder = ["designer", "title"];
+		settings.global = {
+			default: "provider-a/model-1:high",
+			designer: "provider-a/model-2",
+		};
+		const dialog = new ProfilesDialog(tui, theme, {
+			store,
+			settings: asSettings(settings),
+			models: fakeModels(),
+			pi: { setModel: async () => true, setThinkingLevel: () => {} },
+			done: () => {},
+		});
+
+		await dialog.processInput("\t");
+		const rendered = dialog.render(100).join("\n");
+		const defaultLine = rendered.split("\n").find(line => line.includes("DEFAULT"));
+
+		expect(defaultLine).toBeDefined();
+		expect(defaultLine?.indexOf("DEFAULT") ?? -1).toBeLessThan(
+			defaultLine?.indexOf("provider-a/model-1:high") ?? -1,
+		);
+		expect(defaultLine).not.toContain(" · DEFAULT");
+		expect(rendered).not.toContain("Default");
+		expect(rendered).not.toContain("Fast");
+		expect(rendered).not.toContain("Thinking");
+		expect(rendered).toContain("designer");
+		expect(rendered).toContain("title");
+	});
+
 	test("model picker resolves thinking suffixes and keeps unavailable selectors out of the list", async () => {
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();
