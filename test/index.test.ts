@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import extension from "../src";
 
 describe("extension entry", () => {
-	test("registers /profiles and the default shortcut, then guards non-TUI mode", async () => {
+	test("registers its entrypoints, guards non-TUI mode, and opens the TUI synchronously", async () => {
 		const registered: Array<{ name: string; description?: string; handler: unknown }> = [];
 		const shortcuts: Array<{ shortcut: string; description?: string; handler: unknown }> = [];
 		const pi = {
@@ -54,6 +54,20 @@ describe("extension entry", () => {
 			{ message: "/profiles is available in TUI mode", type: "warning" },
 		]);
 		expect(customCalled).toBe(false);
+
+		let customCalledSynchronously = false;
+		const opening = commandHandler("", {
+			mode: "tui",
+			ui: {
+				notify() {},
+				custom() {
+					customCalledSynchronously = true;
+					return Promise.resolve(undefined);
+				},
+			},
+		});
+		expect(customCalledSynchronously).toBe(true);
+		await opening;
 	});
 
 	test("registers the default shortcut during install-time validation", () => {

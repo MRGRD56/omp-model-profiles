@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { KeyId } from "@oh-my-pi/pi-tui";
+import { LoadingProfilesDialog } from "./loading-profiles-dialog";
 
 // OMP 18.1.11 does not use Ctrl+Alt+P for a built-in action.
 const DEFAULT_PROFILE_SHORTCUT: KeyId = "ctrl+alt+p";
@@ -35,31 +36,29 @@ async function openProfiles(pi: ExtensionAPI, ctx: ExtensionContext): Promise<vo
 		ctx.ui.notify("/profiles is available in TUI mode", "warning");
 		return;
 	}
-	const [{ ProfileStore }, { ProfilesDialog }] = await Promise.all([
-		import("./profile-store"),
-		import("./profiles-dialog"),
-	]);
-
-	const store = new ProfileStore();
-	try {
-		await store.load();
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ctx.ui.notify(`Cannot open model profiles: ${message}`, "error");
-		return;
-	}
-
-	// `pi.pi.settings` is the HOST's live Settings singleton. The plugin's
-	// module graph is separate, so ProfilesDialog also installs the host
-	// Theme into that graph before constructing OMP's native ModelBrowser.
 	await ctx.ui.custom(
 		(tui, theme, _keybindings, done) =>
-			new ProfilesDialog(tui, theme, {
-				store,
-				settings: pi.pi.settings,
-				models: ctx.models,
-				pi,
+			new LoadingProfilesDialog(tui, theme, {
 				done: () => done(undefined),
+				onError: error => {
+					const message = error instanceof Error ? error.message : String(error);
+					ctx.ui.notify(`Cannot open model profiles: ${message}`, "error");
+				},
+				load: async () => {
+					const [{ ProfileStore }, { ProfilesDialog }] = await Promise.all([
+						import("./profile-store"),
+						import("./profiles-dialog"),
+					]);
+					const store = new ProfileStore();
+					await store.load();
+					return new ProfilesDialog(tui, theme, {
+						store,
+						settings: pi.pi.settings,
+						models: ctx.models,
+						pi,
+						done: () => done(undefined),
+					});
+				},
 			}),
 		{
 			overlay: true,
