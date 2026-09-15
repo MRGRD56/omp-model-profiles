@@ -48,6 +48,8 @@ Open the interface with:
 
 The default shortcut is `Ctrl+Alt+P`.
 
+Opening the manager clears the screen before reading profiles. If loading takes longer than 600 ms, a loading indicator appears until the manager is ready. Press `Esc` to cancel while loading.
+
 | Key | Action |
 | --- | --- |
 | `↑` / `↓` | Select a profile or role |

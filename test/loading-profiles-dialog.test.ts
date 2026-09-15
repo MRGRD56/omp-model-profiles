@@ -19,9 +19,12 @@ const theme = {
 	getSpinnerFrames: () => ["-", "\\", "|", "/"],
 } as unknown as Theme;
 
+const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve));
+
 describe("LoadingProfilesDialog", () => {
 	test("stays blank until the delay, then renders loading and switches to the ready dialog", async () => {
 		const pending = Promise.withResolvers<Component>();
+		let loadStarted = false;
 		let renderRequests = 0;
 		let showLoading: (() => void) | undefined;
 		let loadingDelay: number | undefined;
@@ -35,7 +38,10 @@ describe("LoadingProfilesDialog", () => {
 			requestRender: () => renderRequests++,
 		} as unknown as TUI;
 		const dialog = new LoadingProfilesDialog(tui, theme, {
-			load: () => pending.promise,
+			load: () => {
+				loadStarted = true;
+				return pending.promise;
+			},
 			done: () => {},
 			onError: error => {
 				throw error;
@@ -47,7 +53,13 @@ describe("LoadingProfilesDialog", () => {
 			},
 		});
 
+		// Construction and even an event-loop turn before mounting must not load.
+		await nextTurn();
+		expect(loadStarted).toBe(false);
 		expect(dialog.render(60)).toEqual([]);
+		expect(loadStarted).toBe(false);
+		await nextTurn();
+		expect(loadStarted).toBe(true);
 		dialog.handleInput("x");
 		expect(receivedInput).toEqual([]);
 
@@ -62,7 +74,7 @@ describe("LoadingProfilesDialog", () => {
 		expect(renderRequests).toBeGreaterThan(0);
 
 		pending.resolve(readyDialog);
-		await pending.promise;
+		await nextTurn();
 		expect(dialog.render(60)).toEqual(["READY"]);
 		dialog.handleInput("x");
 		expect(receivedInput).toEqual(["x"]);
@@ -89,6 +101,8 @@ describe("LoadingProfilesDialog", () => {
 			},
 		});
 
+		dialog.render(60);
+		await nextTurn();
 		dialog.handleInput("\x1b");
 		expect(closed).toBe(1);
 		expect(loadingCancelled).toBe(true);
@@ -99,11 +113,63 @@ describe("LoadingProfilesDialog", () => {
 				readyDialogDisposed = true;
 			},
 		});
-		await pending.promise;
+		await nextTurn();
 
 		expect(readyDialogDisposed).toBe(true);
 		expect(dialog.render(60)).toEqual([]);
 		dialog.handleInput("\x1b");
+		expect(closed).toBe(1);
+	});
+
+	test("fast loading never displays the spinner", async () => {
+		let showLoading: (() => void) | undefined;
+		const dialog = new LoadingProfilesDialog({ requestRender() {} } as unknown as TUI, theme, {
+			load: async () => ({ render: () => ["READY"] }),
+			done() {},
+			onError: error => { throw error; },
+			scheduleLoading: show => {
+				showLoading = show;
+				return () => {};
+			},
+		});
+		expect(dialog.render(60)).toEqual([]);
+		await nextTurn();
+		expect(dialog.render(60)).toEqual(["READY"]);
+		showLoading?.();
+		expect(dialog.render(60)).toEqual(["READY"]);
+		dialog.dispose();
+	});
+
+	test("closing after the blank frame cancels work before it starts", async () => {
+		let started = false;
+		let closed = 0;
+		const dialog = new LoadingProfilesDialog({} as TUI, theme, {
+			load: async () => {
+				started = true;
+				return { render: () => ["READY"] };
+			},
+			done: () => closed++,
+			onError: error => { throw error; },
+		});
+		dialog.render(60);
+		dialog.handleInput("\x1b");
+		await nextTurn();
+		expect(started).toBe(false);
+		expect(closed).toBe(1);
+	});
+
+	test("a synchronous loading failure is reported and closes the overlay", async () => {
+		const failure = new Error("Cannot read profiles");
+		const errors: unknown[] = [];
+		let closed = 0;
+		const dialog = new LoadingProfilesDialog({} as TUI, theme, {
+			load: () => { throw failure; },
+			done: () => closed++,
+			onError: error => errors.push(error),
+		});
+		dialog.render(60);
+		await nextTurn();
+		expect(errors).toEqual([failure]);
 		expect(closed).toBe(1);
 	});
 });

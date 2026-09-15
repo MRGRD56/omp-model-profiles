@@ -32,6 +32,8 @@ export class LoadingProfilesDialog implements Component {
 	readonly #theme: Theme;
 	readonly #deps: LoadingProfilesDialogDeps;
 	readonly #spinnerFrames: readonly string[];
+	#started = false;
+	#loadImmediate: NodeJS.Immediate | undefined;
 	#cancelLoadingDelay: (() => void) | undefined;
 	#spinnerTimer: NodeJS.Timeout | undefined;
 	#spinnerIndex = 0;
@@ -44,17 +46,6 @@ export class LoadingProfilesDialog implements Component {
 		this.#theme = theme;
 		this.#deps = deps;
 		this.#spinnerFrames = theme.getSpinnerFrames("activity");
-
-		if (deps.scheduleLoading) {
-			this.#cancelLoadingDelay = deps.scheduleLoading(() => this.#beginLoadingScreen(), DEFAULT_LOADING_DELAY_MS);
-		} else {
-			const loadingDelay = setTimeout(() => this.#beginLoadingScreen(), DEFAULT_LOADING_DELAY_MS);
-			this.#cancelLoadingDelay = () => clearTimeout(loadingDelay);
-		}
-		void deps.load().then(
-			dialog => this.#finishLoading(dialog),
-			error => this.#failLoading(error),
-		);
 	}
 
 	handleInput(data: string): void {
@@ -71,6 +62,16 @@ export class LoadingProfilesDialog implements Component {
 	}
 
 	render(width: number): readonly string[] {
+		if (!this.#started && !this.#disposed) {
+			this.#started = true;
+			// The host attaches the overlay after the factory returns. Start work
+			// on the next turn, after this blank frame has reached the terminal.
+			this.#loadImmediate = setImmediate(() => {
+				this.#loadImmediate = undefined;
+				if (this.#disposed) return;
+				this.#startLoading();
+			});
+		}
 		if (this.#dialog) return this.#dialog.render(width);
 		if (!this.#showLoading) return [];
 
@@ -114,6 +115,19 @@ export class LoadingProfilesDialog implements Component {
 		this.#dialog = undefined;
 	}
 
+	#startLoading(): void {
+		if (this.#deps.scheduleLoading) {
+			this.#cancelLoadingDelay = this.#deps.scheduleLoading(() => this.#beginLoadingScreen(), DEFAULT_LOADING_DELAY_MS);
+		} else {
+			const loadingDelay = setTimeout(() => this.#beginLoadingScreen(), DEFAULT_LOADING_DELAY_MS);
+			this.#cancelLoadingDelay = () => clearTimeout(loadingDelay);
+		}
+		void Promise.try(() => this.#deps.load()).then(
+			dialog => this.#finishLoading(dialog),
+			error => this.#failLoading(error),
+		);
+	}
+
 	#beginLoadingScreen(): void {
 		if (this.#disposed || this.#dialog) return;
 		this.#showLoading = true;
@@ -143,6 +157,8 @@ export class LoadingProfilesDialog implements Component {
 	}
 
 	#clearTimers(): void {
+		clearImmediate(this.#loadImmediate);
+		this.#loadImmediate = undefined;
 		this.#cancelLoadingDelay?.();
 		clearInterval(this.#spinnerTimer);
 		this.#cancelLoadingDelay = undefined;

@@ -1,6 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { KeyId } from "@oh-my-pi/pi-tui";
 import { LoadingProfilesDialog } from "./loading-profiles-dialog";
+import { ProfileStore } from "./profile-store";
+import { ProfilesDialog } from "./profiles-dialog";
 
 // OMP 18.1.11 does not use Ctrl+Alt+P for a built-in action.
 const DEFAULT_PROFILE_SHORTCUT: KeyId = "ctrl+alt+p";
@@ -45,10 +47,6 @@ async function openProfiles(pi: ExtensionAPI, ctx: ExtensionContext): Promise<vo
 					ctx.ui.notify(`Cannot open model profiles: ${message}`, "error");
 				},
 				load: async () => {
-					const [{ ProfileStore }, { ProfilesDialog }] = await Promise.all([
-						import("./profile-store"),
-						import("./profiles-dialog"),
-					]);
 					const store = new ProfileStore();
 					await store.load();
 					return new ProfilesDialog(tui, theme, {
