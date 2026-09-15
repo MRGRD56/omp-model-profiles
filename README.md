@@ -48,7 +48,7 @@ Open the interface with:
 
 The default shortcut is `Ctrl+Alt+P`.
 
-Opening the manager clears the screen before reading profiles. If loading takes longer than 600 ms, a loading indicator appears until the manager is ready. Press `Esc` to cancel while loading.
+Opening the manager clears the screen before reading profiles. If loading takes longer than 600 ms, a loading indicator appears until the manager is ready. Press `Esc` or `Ctrl+C` to cancel while loading.
 
 | Key | Action |
 | --- | --- |
@@ -61,6 +61,7 @@ Opening the manager clears the screen before reading profiles. If loading takes 
 | `/` | Search profiles |
 | `Delete` | Set the selected role to Auto while choosing a model |
 | `Esc` | Go back or close the interface |
+| `Ctrl+C` | Close Model Profiles from any panel or nested screen |
 
 To change the shortcut, add this setting to the active OMP `config.yml`:
 

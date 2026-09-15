@@ -54,7 +54,7 @@ export class LoadingProfilesDialog implements Component {
 			this.#dialog.handleInput?.(data);
 			return;
 		}
-		if (data === "\x1b" || matchesKey(data, "escape") || matchesKey(data, "esc")) {
+		if (data === "\x1b" || matchesKey(data, "escape") || matchesKey(data, "esc") || matchesKey(data, "ctrl+c")) {
 			this.#disposed = true;
 			this.#clearTimers();
 			this.#deps.done();
@@ -89,7 +89,7 @@ export class LoadingProfilesDialog implements Component {
 			`${this.#theme.fg("border", box.vertical)} ${fit(`${this.#theme.fg("accent", spinner)} Loading model profiles…`, innerWidth)} ${this.#theme.fg("border", box.vertical)}`,
 			`${this.#theme.fg("border", box.vertical)} ${fit("", innerWidth)} ${this.#theme.fg("border", box.vertical)}`,
 			this.#theme.fg("border", box.teeRight + box.horizontal.repeat(Math.max(0, panelWidth - 2)) + box.teeLeft),
-			`${this.#theme.fg("border", box.vertical)} ${fit(this.#theme.fg("dim", "Esc close"), innerWidth)} ${this.#theme.fg("border", box.vertical)}`,
+			`${this.#theme.fg("border", box.vertical)} ${fit(this.#theme.fg("dim", "Esc / Ctrl+C close"), innerWidth)} ${this.#theme.fg("border", box.vertical)}`,
 			this.#theme.fg("border", box.bottomLeft + box.horizontal.repeat(Math.max(0, panelWidth - 2)) + box.bottomRight),
 		];
 		const left = padding(Math.max(0, Math.floor((width - panelWidth) / 2)));

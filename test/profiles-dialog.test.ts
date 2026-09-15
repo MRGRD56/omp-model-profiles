@@ -445,6 +445,50 @@ describe("ProfilesDialog", () => {
 		expect(store.profiles[0]?.models.default).toBeUndefined();
 	});
 
+	test("Ctrl+C closes from every nested screen", async () => {
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1:high" }, "Work");
+
+		const enterNestedModes: Array<{ mode: string; enter: (dialog: ProfilesDialog<TestModel>) => Promise<void> }> = [
+			{ mode: "browse", enter: async () => {} },
+			{ mode: "search-profiles", enter: dialog => dialog.processInput("/") },
+			{ mode: "rename", enter: dialog => dialog.processInput("e") },
+			{ mode: "create-profile", enter: dialog => dialog.processInput("n") },
+			{ mode: "confirm-delete", enter: dialog => dialog.processInput("d") },
+			{
+				mode: "pick-model",
+				enter: async dialog => {
+					await dialog.processInput("\t");
+					await dialog.processInput("\n");
+				},
+			},
+			{
+				mode: "pick-effort",
+				enter: async dialog => {
+					await dialog.processInput("\t");
+					await dialog.processInput("\n");
+					await dialog.processInput("\n");
+				},
+			},
+		];
+
+		for (const nested of enterNestedModes) {
+			let closed = 0;
+			const dialog = new ProfilesDialog(tui, theme, {
+				store,
+				settings: asSettings(new FakeSettings()),
+				models: fakeModels(),
+				pi: { setModel: async () => true, setThinkingLevel: () => {} },
+				done: () => closed++,
+			});
+			await nested.enter(dialog);
+			expect(dialog.debugState().mode).toBe(nested.mode);
+			await dialog.processInput("\x03");
+			expect(closed).toBe(1);
+		}
+	});
+
 	test("shows the selection cursor only in the focused pane", async () => {
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();

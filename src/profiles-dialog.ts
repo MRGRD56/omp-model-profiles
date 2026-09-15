@@ -267,6 +267,10 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	/** Public async twin of `handleInput` so tests can await a full interaction. */
 	async processInput(data: string): Promise<void> {
 		if (this.#disposed) return;
+		if (matchesKey(data, "ctrl+c")) {
+			this.#deps.done();
+			return;
+		}
 		if (this.#busy) {
 			await this.#pending;
 			return;
@@ -530,21 +534,21 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	#footerText(): string {
 		switch (this.#mode) {
 			case "search-profiles":
-				return "Enter done · Esc clear";
+				return "Enter done · Esc clear · Ctrl+C close";
 			case "rename":
-				return "Enter save · Esc cancel";
+				return "Enter save · Esc cancel · Ctrl+C close";
 			case "create-profile":
-				return "Enter create · Esc cancel";
+				return "Enter create · Esc cancel · Ctrl+C close";
 			case "confirm-delete":
-				return "Enter delete · Esc cancel";
+				return "Enter delete · Esc cancel · Ctrl+C close";
 			case "pick-model":
-				return "↑/↓ models · Enter assign · type to search · Delete Auto · Esc back";
+				return "↑/↓ models · Enter assign · type to search · Delete Auto · Esc back · Ctrl+C close";
 			case "pick-effort":
-				return "↑/↓ effort · Enter assign · Esc models";
+				return "↑/↓ effort · Enter assign · Esc models · Ctrl+C close";
 			case "browse":
-				if (this.#panel === "details") return "Enter pick · Tab profiles · Esc close";
-				if (!this.#currentProfile) return "Enter create · / search · Esc close";
-				return "Enter apply · n create · e rename · d delete · / search · Tab details · Esc close";
+				if (this.#panel === "details") return "Enter pick · Tab profiles · Esc close · Ctrl+C close";
+				if (!this.#currentProfile) return "Enter create · / search · Esc close · Ctrl+C close";
+				return "Enter apply · n create · e rename · d delete · / search · Tab details · Esc close · Ctrl+C close";
 		}
 	}
 

@@ -69,7 +69,7 @@ describe("LoadingProfilesDialog", () => {
 		expect(loading).toHaveLength(24);
 		expect(loading[8]).toContain("Model Profiles");
 		expect(loading.join("\n")).toContain("Loading model profiles…");
-		expect(loading.join("\n")).toContain("Esc close");
+		expect(loading.join("\n")).toContain("Esc / Ctrl+C close");
 		expect(loading.every(line => visibleWidth(line) <= 60)).toBe(true);
 		expect(renderRequests).toBeGreaterThan(0);
 
@@ -81,7 +81,7 @@ describe("LoadingProfilesDialog", () => {
 		dialog.dispose();
 	});
 
-	test("escape closes during loading and a late result cannot reopen the dialog", async () => {
+	test("Ctrl+C closes during loading and a late result cannot reopen the dialog", async () => {
 		const pending = Promise.withResolvers<Component>();
 		let closed = 0;
 		let loadingCancelled = false;
@@ -103,7 +103,7 @@ describe("LoadingProfilesDialog", () => {
 
 		dialog.render(60);
 		await nextTurn();
-		dialog.handleInput("\x1b");
+		dialog.handleInput("\x03");
 		expect(closed).toBe(1);
 		expect(loadingCancelled).toBe(true);
 
@@ -117,7 +117,7 @@ describe("LoadingProfilesDialog", () => {
 
 		expect(readyDialogDisposed).toBe(true);
 		expect(dialog.render(60)).toEqual([]);
-		dialog.handleInput("\x1b");
+		dialog.handleInput("\x03");
 		expect(closed).toBe(1);
 	});
 

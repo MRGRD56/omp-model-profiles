@@ -1,6 +1,6 @@
 {
 	"name": "omp-model-profiles",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"type": "module",
 	"description": "Save, edit and apply whole model-role assignment sets as named profiles.",
