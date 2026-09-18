@@ -4,9 +4,9 @@ import {
 	truncateToWidth,
 	visibleWidth,
 	type Component,
+	type Theme,
 	type TUI,
 } from "@oh-my-pi/pi-tui";
-import type { Theme } from "@oh-my-pi/pi-coding-agent";
 
 const DEFAULT_LOADING_DELAY_MS = 600;
 const SPINNER_INTERVAL_MS = 120;

@@ -10,19 +10,21 @@ import {
 	type SelectItem,
 	type SelectListTheme,
 	type SymbolTheme,
+	type Theme,
+	type ThemeColor,
 	type TUI,
 } from "@oh-my-pi/pi-tui";
-import type { Theme, ThemeColor } from "@oh-my-pi/pi-coding-agent";
+import { parseModelString } from "@oh-my-pi/pi-tui/overlays/model-selector";
+import { getThinkingLevelMetadata } from "@oh-my-pi/pi-tui/thinking";
 import {
 	buildBrowserItems,
 	ModelBrowser,
+	setThemeInstance,
 	sortModelItems,
 	type ModelBrowserItem,
-} from "@oh-my-pi/pi-coding-agent/modes/components/model-browser";
-import { parseModelString } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
-import type { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { setThemeInstance } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
-import { getThinkingLevelMetadata } from "@oh-my-pi/pi-coding-agent/thinking";
+	type Settings,
+} from "@oh-my-pi/pi-coding-agent";
+import { createModelBrowserSource } from "@oh-my-pi/pi-coding-agent/modes/model-browser-source";
 import { applyProfile, isProfileActive, snapshotLayerModelRoles, type ApplyModels, type ApplySession } from "./apply-profile";
 import type { ModelProfile, ProfileStore } from "./profile-store";
 import { nextFreeName } from "./profile-store";
@@ -989,7 +991,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#pickOriginalSelector = currentSelector;
 		this.#pickResolvedSelector = resolvedSelector;
 
-		const browser = new ModelBrowser(this.#deps.settings, {
+		const browser = new ModelBrowser(createModelBrowserSource(this.#deps.settings), {
 			showProvider: true,
 			markOverContext: false,
 			emptyText: () => "  No authenticated models available",

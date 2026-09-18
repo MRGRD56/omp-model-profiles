@@ -16,7 +16,7 @@ An [Oh My Pi](https://github.com/can1357/oh-my-pi) extension for saving and swit
 
 ## Requirements
 
-- Oh My Pi 18.1.11 or newer
+- Oh My Pi 18.2.5 or newer
 
 ## Installation
 

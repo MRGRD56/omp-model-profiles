@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { visibleWidth, type Component, type TUI } from "@oh-my-pi/pi-tui";
-import type { Theme } from "@oh-my-pi/pi-coding-agent";
+import { visibleWidth, type Component, type Theme, type TUI } from "@oh-my-pi/pi-tui";
 import { LoadingProfilesDialog } from "../src/loading-profiles-dialog";
 
 const theme = {

@@ -56,14 +56,14 @@ User profile data lives outside this repository. Relinking, upgrading, or reinst
 
 ## OMP integration contracts
 
-Minimum supported OMP version: 18.1.11.
+Minimum supported OMP version: 18.2.5.
 
 Use these upstream APIs directly:
 
 - `@oh-my-pi/pi-coding-agent/config/model-roles`
   - `getKnownRoleIds(settings)`
   - `getRoleInfo(role, settings)`
-- `@oh-my-pi/pi-coding-agent/config/model-resolver`
+- `@oh-my-pi/pi-tui/overlays/model-selector`
   - `parseModelString`
 - `@oh-my-pi/pi-coding-agent/config/settings`
   - `Settings.setModelRole`
@@ -71,6 +71,16 @@ Use these upstream APIs directly:
   - `Settings.clearProjectModelRole`
   - `Settings.flush`
   - `settings.get("modelRoleStorage")`
+- `@oh-my-pi/pi-coding-agent/modes/model-browser-source`
+  - `createModelBrowserSource`
+- `@oh-my-pi/pi-coding-agent`
+  - `buildBrowserItems`
+  - `ModelBrowser`
+  - `setThemeInstance`
+  - `sortModelItems`
+- `@oh-my-pi/pi-tui/thinking`
+  - `AUTO_THINKING`
+  - `getThinkingLevelMetadata`
 - `@oh-my-pi/pi-coding-agent/utils/atomic-file`
   - `replaceFileAtomically`
 - `@oh-my-pi/pi-utils`
