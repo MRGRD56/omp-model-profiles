@@ -77,7 +77,11 @@ function fakeModel(provider: string, id: string): TestModel {
 		baseUrl: "",
 		reasoning,
 		thinking: reasoning
-			? { mode: "effort", efforts: ["low", "medium", "high"], defaultLevel: "medium" }
+			? {
+					mode: "effort",
+					efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
+					defaultLevel: "medium",
+				}
 			: undefined,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -206,6 +210,124 @@ describe("ProfilesDialog", () => {
 		expect(closed).toBe(false);
 	});
 
+	test("search keeps the selected profile and uses safe fallbacks", async () => {
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1" }, "Alpha");
+		await store.create({ default: "provider-a/model-1" }, "Beta");
+
+		const settings = new FakeSettings();
+		settings.global = { default: "provider-a/model-1" };
+		let switched = 0;
+		const dialog = new ProfilesDialog(tui, theme, {
+			store,
+			settings: asSettings(settings),
+			models: fakeModels(),
+			pi: {
+				setModel: async () => {
+					switched++;
+					return true;
+				},
+				setThinkingLevel: () => {},
+			},
+			done: () => {},
+		});
+
+		await dialog.processInput("\x1b[B");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+
+		await dialog.processInput("/");
+		for (const ch of "Beta") await dialog.processInput(ch);
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+		await dialog.processInput("\n");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+		expect(dialog.debugState().notice).toContain("Applied Beta");
+		expect(switched).toBe(1);
+		await dialog.processInput("/");
+		await dialog.processInput("\x1b");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+
+		await dialog.processInput("/");
+		await dialog.processInput("a");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+		await dialog.processInput("\x7f");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+		await dialog.processInput("\x1b");
+		expect(dialog.debugState().selectedProfile).toBe("Beta");
+
+		await dialog.processInput("/");
+		for (const ch of "zzz") await dialog.processInput(ch);
+		expect(dialog.debugState().selectedProfile).toBeNull();
+		await dialog.processInput("\x1b");
+		expect(dialog.debugState().selectedProfile).toBe("Alpha");
+
+		await dialog.processInput("\x1b[B");
+		await dialog.processInput("/");
+		for (const ch of "Alpha") await dialog.processInput(ch);
+		expect(dialog.debugState().selectedProfile).toBe("Alpha");
+	});
+
+	test("keeps delete conflicts visible in the confirmation screen", async () => {
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1" }, "Work");
+		const competing = new ProfileStore({ agentDir: dir });
+		await competing.load();
+		await competing.create({ default: "provider-a/model-1" }, "Other");
+
+		const dialog = new ProfilesDialog(tui, theme, {
+			store,
+			settings: asSettings(new FakeSettings()),
+			models: fakeModels(),
+			pi: { setModel: async () => true, setThinkingLevel: () => {} },
+			done: () => {},
+		});
+
+		await dialog.processInput("d");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("confirm-delete");
+		expect(store.profiles).toHaveLength(1);
+		const error = dialog.debugState().error as string;
+		expect(error).toBeTruthy();
+		expect(dialog.render(60).join("\n")).toContain(error);
+
+		await dialog.processInput("\x1b");
+		expect(dialog.debugState().mode).toBe("browse");
+	});
+
+	test("retries a failed deletion without closing the confirmation screen", async () => {
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1" }, "Work");
+		let attempts = 0;
+		const remove = store.remove.bind(store);
+		store.remove = async id => {
+			attempts++;
+			if (attempts === 1) throw new Error("delete refused for test");
+			await remove(id);
+		};
+
+		const dialog = new ProfilesDialog(tui, theme, {
+			store,
+			settings: asSettings(new FakeSettings()),
+			models: fakeModels(),
+			pi: { setModel: async () => true, setThinkingLevel: () => {} },
+			done: () => {},
+		});
+
+		await dialog.processInput("d");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("confirm-delete");
+		expect(dialog.render(60).join("\n")).toContain("delete refused for test");
+		expect(store.profiles).toHaveLength(1);
+
+		await dialog.processInput("\n");
+		expect(attempts).toBe(2);
+		expect(dialog.debugState().mode).toBe("browse");
+		expect(store.profiles).toHaveLength(0);
+	});
+
 	test("escape closes the overlay", async () => {
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();
@@ -312,7 +434,7 @@ describe("ProfilesDialog", () => {
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();
 		await store.create({ default: "provider-a/model-1" }, "Active");
-		await store.create({ default: "provider-a/model-2" }, "Other");
+		const other = await store.create({ default: "provider-a/model-2" }, "Other");
 
 		const settings = new FakeSettings();
 		settings.global = { default: "provider-a/model-1" };
@@ -328,6 +450,18 @@ describe("ProfilesDialog", () => {
 		expect(rendered).toContain("✓");
 		expect(rendered).toContain("ACTIVE");
 		expect(rendered).toContain("[ + New profile ]");
+		settings.global = { default: "provider-a/model-2" };
+		rendered = dialog.render(60).join("\n");
+		const activeLine = rendered.split("\n").find(line => line.includes("Active"));
+		const otherLine = rendered.split("\n").find(line => line.includes("Other"));
+		expect(activeLine).toBeDefined();
+		expect(activeLine).not.toContain("ACTIVE");
+		expect(otherLine).toContain("ACTIVE");
+
+		await store.rename(other.id, "Renamed");
+		rendered = dialog.render(60).join("\n");
+		expect(rendered).toContain("Renamed");
+		expect(rendered).not.toContain("Other");
 
 		await dialog.processInput("\x1b[B");
 		await dialog.processInput("\x1b[B");
@@ -408,7 +542,7 @@ describe("ProfilesDialog", () => {
 		await dialog.processInput("\n");
 		expect(dialog.debugState().mode).toBe("pick-effort");
 		let effort = dialog.debugState().pickEffort as Record<string, unknown>;
-		expect(effort.itemCount).toBe(4); // default + low/medium/high
+		expect(effort.itemCount).toBe(7); // default + min/low/medium/high/xhigh/max
 		expect(effort.selectedItemLabel).toBe("high");
 		rendered = dialog.render(100).join("\n");
 		expect(rendered).toContain("Pick Reasoning Effort · Default");
@@ -521,14 +655,23 @@ describe("ProfilesDialog", () => {
 		expect(cursorLines[0].indexOf(">")).toBeLessThan(35);
 	});
 
-	test("every overlay mode renders within the terminal width", async () => {
+	test("every overlay mode renders within terminal width and height", async () => {
+		const terminal = { rows: 24, columns: 100 };
+		const localTui = { terminal, requestRender: () => {} } as unknown as TUI;
+		const fits = (dialog: ProfilesDialog<TestModel>) => {
+			for (const width of [40, 60, 100]) {
+				const lines = dialog.render(width);
+				expect(lines.length).toBeLessThanOrEqual(terminal.rows);
+				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			}
+		};
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();
 		const settings = new FakeSettings();
 		settings.roleStorage = "global";
 		settings.global = { default: "provider-a/model-1" };
 
-		const dialog = new ProfilesDialog(tui, theme, {
+		const dialog = new ProfilesDialog(localTui, theme, {
 			store,
 			settings: asSettings(settings),
 			models: fakeModels(),
@@ -536,22 +679,143 @@ describe("ProfilesDialog", () => {
 			done: () => {},
 		});
 
-		// Walk into every mode and assert the box chrome never overflows.
-		await dialog.processInput("n"); // create-profile
-		await dialog.processInput("\n"); // back to browse with a profile
-		await dialog.processInput("/"); // search-profiles
-		await dialog.processInput("\x1b"); // back to browse
-		await dialog.processInput("e"); // rename
-		await dialog.processInput("\x1b"); // back
-		await dialog.processInput("d"); // confirm-delete
-		await dialog.processInput("\x1b"); // back
-		await dialog.processInput("\t"); // details
-		await dialog.processInput("\n"); // pick-model
+		fits(dialog);
+		await dialog.processInput("n");
+		expect(dialog.debugState().mode).toBe("create-profile");
+		fits(dialog);
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("browse");
+		fits(dialog);
+		await dialog.processInput("/");
+		expect(dialog.debugState().mode).toBe("search-profiles");
+		fits(dialog);
+		await dialog.processInput("\x1b");
+		await dialog.processInput("e");
+		expect(dialog.debugState().mode).toBe("rename");
+		fits(dialog);
+		await dialog.processInput("\x1b");
+		await dialog.processInput("d");
+		expect(dialog.debugState().mode).toBe("confirm-delete");
+		fits(dialog);
+		await dialog.processInput("\x1b");
+		await dialog.processInput("\t");
+		fits(dialog);
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-model");
+		fits(dialog);
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-effort");
+		fits(dialog);
+	});
 
-		for (const width of [40, 60, 100]) {
-			for (const line of dialog.render(width)) {
-				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-			}
+	test("picker windows follow terminal height and recover selection", async () => {
+		const terminal = { rows: 24, columns: 100 };
+		const localTui = { terminal, requestRender: () => {} } as unknown as TUI;
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1" }, "Work");
+		const settings = new FakeSettings();
+		settings.global = { default: "provider-a/model-1" };
+		let closed = false;
+		const dialog = new ProfilesDialog(localTui, theme, {
+			store,
+			settings: asSettings(settings),
+			models: fakeModels(),
+			pi: { setModel: async () => true, setThinkingLevel: () => {} },
+			done: () => {
+				closed = true;
+			},
+		});
+
+		await dialog.processInput("\t");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-model");
+		terminal.rows = 10;
+		let rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(10);
+		expect(rendered.join("\n")).toContain("model-1");
+
+		for (const ch of "model-2") await dialog.processInput(ch);
+		expect((dialog.debugState().pickModel as Record<string, unknown>)?.query).toBe("model-2");
+		const originalSelector = store.profiles[0]?.models.default;
+
+		terminal.rows = 5;
+		rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(5);
+		expect(rendered.join("\n")).toContain("Terminal too small");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-model");
+		expect(store.profiles[0]?.models.default).toBe(originalSelector);
+
+		terminal.rows = 10;
+		rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(10);
+		expect((dialog.debugState().pickModel as Record<string, unknown>)?.query).toBe("model-2");
+		expect(rendered.join("\n")).toContain("model-2");
+
+		terminal.rows = 5;
+		dialog.render(60);
+		await dialog.processInput("\x1b");
+		expect(closed).toBe(true);
+	});
+
+	test("effort list uses available height, keeps selection visible, and restores", async () => {
+		const terminal = { rows: 24, columns: 100 };
+		const localTui = { terminal, requestRender: () => {} } as unknown as TUI;
+		const store = new ProfileStore({ agentDir: dir });
+		await store.load();
+		await store.create({ default: "provider-a/model-1" }, "Work");
+		const dialog = new ProfilesDialog(localTui, theme, {
+			store,
+			settings: asSettings(new FakeSettings()),
+			models: fakeModels(),
+			pi: { setModel: async () => true, setThinkingLevel: () => {} },
+			done: () => {},
+		});
+
+		await dialog.processInput("\t");
+		await dialog.processInput("\n");
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-effort");
+		let rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(24);
+		for (const effort of ["default", "min", "low", "medium", "high", "xhigh", "max"]) {
+			expect(rendered.join("\n")).toContain(effort);
 		}
+
+		terminal.rows = 10;
+		rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(10);
+		const visibleAtTen = ["default", "min", "low", "medium", "high", "xhigh", "max"].filter(effort =>
+			rendered.join("\n").includes(effort),
+		);
+		expect(visibleAtTen.length).toBeLessThanOrEqual(5);
+		for (let i = 0; i < 3; i++) await dialog.processInput("\x1b[B");
+		expect((dialog.debugState().pickEffort as Record<string, unknown>)?.selectedItemLabel).toBe("max");
+		rendered = dialog.render(60);
+		expect(rendered.join("\n")).toContain("max");
+
+		const setModel = store.setModel.bind(store);
+		store.setModel = async () => {
+			throw new Error("effort refused for test");
+		};
+		await dialog.processInput("\n");
+		expect(dialog.debugState().mode).toBe("pick-effort");
+		rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(10);
+		expect(rendered.join("\n")).toContain("effort refused for test");
+		const visibleWithStatus = ["default", "min", "low", "medium", "high", "xhigh", "max"].filter(effort =>
+			rendered.join("\n").includes(effort),
+		);
+		expect(visibleWithStatus.length).toBeLessThanOrEqual(4);
+
+		terminal.rows = 24;
+		rendered = dialog.render(60);
+		expect(rendered.length).toBeLessThanOrEqual(24);
+		expect((dialog.debugState().pickEffort as Record<string, unknown>)?.selectedItemLabel).toBe("max");
+		for (const effort of ["default", "min", "low", "medium", "high", "xhigh", "max"]) {
+			expect(rendered.join("\n")).toContain(effort);
+		}
+		store.setModel = setModel;
 	});
 });

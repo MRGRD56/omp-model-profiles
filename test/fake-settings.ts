@@ -61,6 +61,27 @@ export class FakeSettings {
 		return this.project[role];
 	}
 
+	getGlobalSettings(): Record<string, unknown> {
+		return { modelRoles: Object.fromEntries(Object.entries(this.global)) };
+	}
+
+	getProjectSettings(): Record<string, unknown> {
+		return { modelRoles: Object.fromEntries(Object.entries(this.project)) };
+	}
+
+	setModelRole(role: string, value: string | undefined): void {
+		if (value === undefined) {
+			delete this.global[role];
+			return;
+		}
+		Object.defineProperty(this.global, role, {
+			value,
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
+	}
+
 	set(path: string, value: unknown): void {
 		if (path === "modelRoles") {
 			this.setGlobalModelRolesCalls++;

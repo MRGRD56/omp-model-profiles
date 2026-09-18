@@ -36,6 +36,20 @@ describe("roles", () => {
 		expect(snapshot["team-reviewer"]).toBe("openai/gpt:low");
 	});
 
+	test("snapshot preserves an own __proto__ role property", () => {
+		const fake = makeSettings();
+		Object.defineProperty(fake.global, "__proto__", {
+			value: "provider/proto:high",
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
+
+		const snapshot = snapshotModelRoles(asSettings(fake));
+		expect(Object.hasOwn(snapshot, "__proto__")).toBe(true);
+		expect(snapshot["__proto__"]).toBe("provider/proto:high");
+	});
+
 	test("display name resolves built-in, custom and unknown roles", () => {
 		const settings = asSettings(makeSettings());
 		expect(roleDisplayName("default", settings)).toBe("Default");

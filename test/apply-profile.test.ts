@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { applyProfile, type ConcreteThinkingLevel, type ModelRef } from "../src/apply-profile";
 import type { ModelProfile } from "../src/profile-store";
 import { asSettings, FakeSettings } from "./fake-settings";
@@ -41,7 +42,7 @@ function providerModel(spec: string): ModelRef {
 }
 
 describe("applyProfile", () => {
-	test("global mode replaces the whole map in one operation and removes stale roles", async () => {
+	test("global mode replaces the complete layer and removes stale runtime roles", async () => {
 		const fake = new FakeSettings();
 		fake.roleStorage = "global";
 		fake.global = { default: "provider/old", "stale-role": "provider/stale" };
@@ -66,6 +67,58 @@ describe("applyProfile", () => {
 		expect(recorded.calls).toEqual([{ provider: "provider", id: "new" }]);
 	});
 
+	test("global apply updates the persisted layer and runtime override", async () => {
+		const settings = Settings.isolated({ modelRoleStorage: "global" });
+		settings.setModelRole("default", "provider/old");
+		settings.setModelRole("stale-role", "provider/stale");
+		settings.overrideModelRoles({ default: "provider/runtime" });
+
+		const recorded = session();
+		const outcome = await applyProfile(
+			profile({ default: "provider/new" }),
+			settings,
+			resolvingModels(spec => providerModel(spec)),
+			recorded.api,
+		);
+
+		expect(outcome.ok).toBe(true);
+		expect(settings.getGlobalModelRole("default")).toBe("provider/new");
+		expect(settings.getGlobalModelRole("stale-role")).toBeUndefined();
+		expect(settings.getModelRole("default")).toBe("provider/new");
+		expect(settings.getModelRole("stale-role")).toBeUndefined();
+		expect(recorded.calls).toEqual([{ provider: "provider", id: "new" }]);
+	});
+
+	test("does not switch the session before settings flush completes", async () => {
+		const fake = new FakeSettings();
+		let releaseFlush!: () => void;
+		const flushGate = new Promise<void>(resolve => {
+			releaseFlush = resolve;
+		});
+		let flushStarted = false;
+		fake.flush = async () => {
+			flushStarted = true;
+			await flushGate;
+			fake.flushCalls++;
+		};
+
+		const recorded = session();
+		const pending = applyProfile(
+			profile({ default: "provider/new" }),
+			asSettings(fake),
+			resolvingModels(spec => providerModel(spec)),
+			recorded.api,
+		);
+
+		await Promise.resolve();
+		expect(flushStarted).toBe(true);
+		expect(recorded.calls).toHaveLength(0);
+
+		releaseFlush();
+		await pending;
+		expect(recorded.calls).toEqual([{ provider: "provider", id: "new" }]);
+	});
+
 	test("project mode calls only project setters/clearers and leaves global untouched", async () => {
 		const fake = new FakeSettings();
 		fake.roleStorage = "project";
@@ -87,7 +140,6 @@ describe("applyProfile", () => {
 		expect(settings.getProjectModelRole("stale-role")).toBeUndefined();
 		expect(settings.getGlobalModelRole("default")).toBe("provider/global-default");
 		expect(settings.getGlobalModelRole("stale-role")).toBe("provider/stale");
-		expect(fake.setGlobalModelRolesCalls).toBe(0);
 		expect(fake.setProjectCalls).toContain("future-role");
 		expect(fake.clearProjectCalls).toContain("stale-role");
 	});

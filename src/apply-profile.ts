@@ -35,6 +35,23 @@ function storageMode(settings: Settings): "global" | "project" {
 	return settings.get("modelRoleStorage") === "project" ? "project" : "global";
 }
 
+/** Exact non-empty role selectors from one persisted Settings layer. */
+export function snapshotLayerModelRoles(
+	settings: Settings,
+	storage: "global" | "project",
+): Record<string, string> {
+	const layer = storage === "global" ? settings.getGlobalSettings() : settings.getProjectSettings();
+	const raw = layer.modelRoles;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+
+	const entries: Array<[string, string]> = [];
+	for (const [role, selector] of Object.entries(raw)) {
+		if (typeof selector === "string" && selector.length > 0) entries.push([role, selector]);
+	}
+	return Object.fromEntries(entries);
+}
+
+
 /**
  * Apply a profile as the complete role-assignment set for the configured
  * storage layer, then switch the live session to the effective default model.
@@ -60,14 +77,19 @@ export async function applyProfile<M extends ModelRef = ModelRef>(
 		return { storage, ok: false, unavailableRoles: unavailable, switchedDefault: false };
 	}
 
+	const roles = new Set(Object.keys(snapshotLayerModelRoles(settings, storage)));
+	for (const role of orderedRoleIds(settings, profile.models)) roles.add(role);
+
 	if (storage === "global") {
-		settings.set("modelRoles", structuredClone(profile.models));
+		for (const role of roles) {
+			settings.setModelRole(role, Object.hasOwn(profile.models, role) ? profile.models[role] : undefined);
+		}
 	} else {
 		// No whole-project setter exists in OMP; clear stale project roles and
 		// set the profile's own keys, so previous assignments never survive a
 		// profile switch.
-		for (const role of orderedRoleIds(settings, profile.models)) {
-			const value = profile.models[role];
+		for (const role of roles) {
+			const value = Object.hasOwn(profile.models, role) ? profile.models[role] : undefined;
 			if (value !== undefined && value.length > 0) {
 				settings.setProjectModelRole(role, value);
 			} else {
@@ -114,22 +136,12 @@ export async function applyProfile<M extends ModelRef = ModelRef>(
  * layer (`global` or `project`). No `activeProfileId` is persisted, so manual
  * role edits never leave a stale "active" marker behind.
  */
-export function isProfileActive(
-	profile: ModelProfile,
-	settings: Settings,
-	storage: "global" | "project",
-): boolean {
-	const target: Record<string, string> = {};
-	for (const role of orderedRoleIds(settings, profile.models)) {
-		const value = storage === "project" ? settings.getProjectModelRole(role) : settings.getGlobalModelRole(role);
-		if (value) target[role] = value;
-	}
-
+export function isProfileActive(profile: ModelProfile, target: Readonly<Record<string, string>>): boolean {
 	const profileKeys = Object.keys(profile.models);
 	const targetKeys = Object.keys(target);
 	if (profileKeys.length !== targetKeys.length) return false;
 	for (const key of profileKeys) {
-		if (profile.models[key] !== target[key]) return false;
+		if (!Object.hasOwn(target, key) || profile.models[key] !== target[key]) return false;
 	}
 	return true;
 }

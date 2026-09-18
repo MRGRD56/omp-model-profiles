@@ -118,7 +118,12 @@ function validateProfiles(data: unknown, filePath: string): ProfilesFile {
 			if (typeof selector !== "string" || selector.length === 0) {
 				throw schemaError(`${where}.models["${role}"] must be a non-empty string`, filePath);
 			}
-			modelMap[role] = selector;
+			Object.defineProperty(modelMap, role, {
+				value: selector,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
 		}
 
 		profiles.push({
@@ -238,7 +243,12 @@ export class ProfileStore {
 			delete profile.models[role];
 		} else {
 			if (selector.length === 0) throw schemaError("Selector must not be empty", this.filePath);
-			profile.models[role] = selector;
+			Object.defineProperty(profile.models, role, {
+				value: selector,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
 		}
 
 		await this.#persist(validateProfiles(next, this.filePath));

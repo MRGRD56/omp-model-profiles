@@ -30,9 +30,8 @@ export function roleTag(role: string, settings: Settings): string | undefined {
 
 /** Exact effective role selectors, including custom roles and thinking suffixes. */
 export function snapshotModelRoles(settings: Settings): Record<string, string> {
-	const snapshot: Record<string, string> = {};
-	for (const [role, selector] of Object.entries(settings.getModelRoles())) {
-		if (selector !== undefined) snapshot[role] = selector;
-	}
-	return snapshot;
+	const entries = Object.entries(settings.getModelRoles()).filter(
+		(entry): entry is [string, string] => entry[1] !== undefined,
+	);
+	return Object.fromEntries(entries);
 }

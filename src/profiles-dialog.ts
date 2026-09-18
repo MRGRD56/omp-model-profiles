@@ -23,12 +23,11 @@ import { parseModelString } from "@oh-my-pi/pi-coding-agent/config/model-resolve
 import type { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { setThemeInstance } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
 import { getThinkingLevelMetadata } from "@oh-my-pi/pi-coding-agent/thinking";
-import { applyProfile, isProfileActive, type ApplyModels, type ApplySession } from "./apply-profile";
+import { applyProfile, isProfileActive, snapshotLayerModelRoles, type ApplyModels, type ApplySession } from "./apply-profile";
 import type { ModelProfile, ProfileStore } from "./profile-store";
 import { nextFreeName } from "./profile-store";
 import { orderedRoleIds, roleDisplayName, roleTag, snapshotModelRoles } from "./roles";
 
-const MIN_LIST_ROWS = 5;
 const WIDE_MIN_COLUMNS = 72;
 const DEFAULT_EFFORT_VALUE = "__default_effort__";
 const CREATE_VALUE = "__create__";
@@ -232,6 +231,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	#pickPendingModelSelector: string | undefined;
 
 	#disposed = false;
+	#terminalTooSmall = false;
 
 	constructor(tui: TUI, theme: Theme, deps: ProfilesDialogDeps<M>) {
 		this.#tui = tui;
@@ -249,9 +249,8 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#createInput.onEscape = () => this.#cancelCreate();
 
 		this.#detailList = this.#emptyList();
-		const activeIndex = this.#orderedProfiles.findIndex(profile =>
-			isProfileActive(profile, this.#deps.settings, this.#storage()),
-		);
+		const target = snapshotLayerModelRoles(this.#deps.settings, this.#storage());
+		const activeIndex = this.#orderedProfiles.findIndex(profile => isProfileActive(profile, target));
 		if (activeIndex >= 0) this.#sidebarIndex = activeIndex;
 		this.#normalizeSidebar();
 	}
@@ -269,6 +268,10 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		if (this.#disposed) return;
 		if (matchesKey(data, "ctrl+c")) {
 			this.#deps.done();
+			return;
+		}
+		if (this.#terminalTooSmall) {
+			if (isEscape(data)) this.#deps.done();
 			return;
 		}
 		if (this.#busy) {
@@ -345,34 +348,54 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	// ────────────────────────────────────────────────────────────────────────
 
 	render(width: number): readonly string[] {
+		const height = this.#tui.terminal.rows;
+		if (height <= 0) {
+			this.#terminalTooSmall = true;
+			return [];
+		}
+
+		let lines: readonly string[];
 		switch (this.#mode) {
 			case "pick-model":
-				return this.#renderPickModel(width);
+				lines = this.#renderPickModel(width);
+				break;
 			case "pick-effort":
-				return this.#renderPickEffort(width);
+				lines = this.#renderPickEffort(width);
+				break;
 			case "rename":
-				return this.#renderRename(width);
+				lines = this.#renderRename(width);
+				break;
 			case "create-profile":
-				return this.#renderCreateProfile(width);
+				lines = this.#renderCreateProfile(width);
+				break;
 			case "confirm-delete":
-				return this.#renderConfirmDelete(width);
+				lines = this.#renderConfirmDelete(width);
+				break;
 			default:
-				return this.#renderBrowse(width);
+				lines = this.#renderBrowse(width);
+				break;
 		}
+
+		if (lines.length > height) {
+			this.#terminalTooSmall = true;
+			return [this.#theme.fg("warning", truncateToWidth("Terminal too small — resize or Esc to close", Math.max(0, width)))];
+		}
+
+		this.#terminalTooSmall = false;
+		return lines;
 	}
 
 	#bodyRows(): number {
 		const chrome = 4 + (this.#statusText() ? 1 : 0);
-		return Math.max(MIN_LIST_ROWS, this.#tui.terminal.rows - chrome);
+		return Math.max(1, this.#tui.terminal.rows - chrome);
 	}
 
 	#sidebarWidth(width: number): number {
 		return Math.max(16, Math.floor(width / 3));
 	}
 
-	#title(): string {
+	#title(profile: ModelProfile | undefined): string {
 		const parts = ["Model Profiles"];
-		const profile = this.#currentProfile;
 		if (profile) parts.push(profile.name);
 		const query = this.#searchQuery.trim();
 		if (query) parts.push(`"${query}"`);
@@ -382,13 +405,21 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	#renderBrowse(width: number): string[] {
 		const bodyRows = this.#bodyRows();
 		const wide = width >= WIDE_MIN_COLUMNS;
+		const orderedProfiles = this.#orderedProfiles;
+		const query = this.#searchQuery.trim().toLowerCase();
+		const profiles = query
+			? orderedProfiles.filter(profile => profile.name.toLowerCase().includes(query))
+			: orderedProfiles;
+		const profile = profiles[this.#sidebarIndex];
+		const roles = profile ? orderedRoleIds(this.#deps.settings, profile.models) : [];
+		const target = snapshotLayerModelRoles(this.#deps.settings, this.#storage());
 		const out: string[] = [];
 
 		if (wide) {
 			const sidebarWidth = this.#sidebarWidth(width);
-			const sidebar = this.#renderSidebarWindow(sidebarWidth, bodyRows);
-			const detail = this.#renderDetailWindow(splitBodyWidth(width, sidebarWidth), bodyRows);
-			out.push(topBorderSplit(this.#theme, width, this.#title(), sidebarWidth));
+			const sidebar = this.#renderSidebarWindow(sidebarWidth, bodyRows, profiles, target);
+			const detail = this.#renderDetailWindow(splitBodyWidth(width, sidebarWidth), bodyRows, profile, roles);
+			out.push(topBorderSplit(this.#theme, width, this.#title(profile), sidebarWidth));
 			for (let i = 0; i < bodyRows; i++) {
 				out.push(splitRow(this.#theme, sidebar[i] ?? "", detail[i] ?? "", width, sidebarWidth));
 			}
@@ -397,37 +428,39 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			const inner = Math.max(1, width - 4);
 			const lines =
 				this.#panel === "profiles"
-					? this.#renderSidebarWindow(inner, bodyRows)
-					: this.#renderDetailWindow(inner, bodyRows);
-			out.push(topBorder(this.#theme, width, this.#title()));
+					? this.#renderSidebarWindow(inner, bodyRows, profiles, target)
+					: this.#renderDetailWindow(inner, bodyRows, profile, roles);
+			out.push(topBorder(this.#theme, width, this.#title(profile)));
 			for (let i = 0; i < bodyRows; i++) out.push(row(this.#theme, lines[i] ?? "", width));
 			out.push(divider(this.#theme, width));
 		}
 
 		const status = this.#statusText();
 		if (status) out.push(row(this.#theme, this.#theme.fg(status.color, status.text), width));
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(Boolean(profile))), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
 
-	#sidebarVisualRows(): number {
-		const profileCount = this.#filteredProfiles.length;
+	#sidebarVisualRows(profileCount: number): number {
 		return profileCount + (profileCount > 0 ? 1 : 0) + 1;
 	}
 
-	#sidebarSelectedVisualIndex(): number {
-		const profileCount = this.#filteredProfiles.length;
+	#sidebarSelectedVisualIndex(profileCount: number): number {
 		return this.#sidebarIndex < profileCount
 			? this.#sidebarIndex
 			: profileCount + (profileCount > 0 ? 1 : 0);
 	}
 
-	#renderSidebarWindow(inner: number, rows: number): string[] {
-		const profiles = this.#filteredProfiles;
+	#renderSidebarWindow(
+		inner: number,
+		rows: number,
+		profiles: readonly ModelProfile[],
+		target: Readonly<Record<string, string>>,
+	): string[] {
 		const profileCount = profiles.length;
-		const totalRows = this.#sidebarVisualRows();
-		const selectedRow = this.#sidebarSelectedVisualIndex();
+		const totalRows = this.#sidebarVisualRows(profileCount);
+		const selectedRow = this.#sidebarSelectedVisualIndex(profileCount);
 		const maxStart = Math.max(0, totalRows - rows);
 		const start = Math.max(0, Math.min(maxStart, selectedRow - Math.floor(rows / 2)));
 		const end = Math.min(totalRows, start + rows);
@@ -438,7 +471,15 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			if (visualRow < profileCount) {
 				const profile = profiles[visualRow];
 				if (profile) {
-					out.push(this.#renderSidebarProfileRow(profile, inner, visualRow === this.#sidebarIndex, focused));
+					out.push(
+						this.#renderSidebarProfileRow(
+							profile,
+							inner,
+							visualRow === this.#sidebarIndex,
+							focused,
+							target,
+						),
+					);
 				}
 				continue;
 			}
@@ -452,13 +493,19 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		return this.#padLines(out, rows);
 	}
 
-	#renderSidebarProfileRow(profile: ModelProfile, width: number, selected: boolean, focused: boolean): string {
+	#renderSidebarProfileRow(
+		profile: ModelProfile,
+		width: number,
+		selected: boolean,
+		focused: boolean,
+		target: Readonly<Record<string, string>>,
+	): string {
 		const cursorGlyph = this.#theme.nav.cursor || ">";
 		const activeGlyph = this.#theme.status.success || "✓";
 		const cursorWidth = Math.max(1, visibleWidth(cursorGlyph));
 		const activeWidth = Math.max(1, visibleWidth(activeGlyph));
-		const active = isProfileActive(profile, this.#deps.settings, this.#storage());
 		const focusedSelection = selected && focused;
+		const active = isProfileActive(profile, target);
 		const badge = "ACTIVE";
 		const showBadge = active && width >= cursorWidth + activeWidth + visibleWidth(badge) + 6;
 		const prefixWidth = cursorWidth + activeWidth + 2;
@@ -501,11 +548,16 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		return focusedSelection ? this.#theme.bg("selectedBg", line) : line;
 	}
 
-	#renderDetailWindow(inner: number, rows: number): string[] {
-		if (!this.#currentProfile) {
+	#renderDetailWindow(
+		inner: number,
+		rows: number,
+		profile: ModelProfile | undefined,
+		roles: readonly string[],
+	): string[] {
+		if (!profile) {
 			return this.#hintWindow("Create or select a profile to snapshot the current model roles", rows);
 		}
-		if (this.#currentRoles.length === 0) {
+		if (roles.length === 0) {
 			return this.#hintWindow("No roles configured", rows);
 		}
 		this.#detailList.setMaxVisible(rows);
@@ -531,7 +583,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		return null;
 	}
 
-	#footerText(): string {
+	#footerText(hasProfile: boolean): string {
 		switch (this.#mode) {
 			case "search-profiles":
 				return "Enter done · Esc clear · Ctrl+C close";
@@ -547,7 +599,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 				return "↑/↓ effort · Enter assign · Esc models · Ctrl+C close";
 			case "browse":
 				if (this.#panel === "details") return "Enter pick · Tab profiles · Esc close · Ctrl+C close";
-				if (!this.#currentProfile) return "Enter create · / search · Esc close · Ctrl+C close";
+				if (!hasProfile) return "Enter create · / search · Esc close · Ctrl+C close";
 				return "Enter apply · n create · e rename · d delete · / search · Tab details · Esc close · Ctrl+C close";
 		}
 	}
@@ -561,7 +613,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		for (const line of this.#renameInput.render(inner)) out.push(row(this.#theme, line, width));
 		if (this.#renameError) out.push(row(this.#theme, this.#theme.fg("error", this.#renameError), width));
 		out.push(divider(this.#theme, width));
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(false)), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
@@ -576,7 +628,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		for (const line of this.#createInput.render(inner)) out.push(row(this.#theme, line, width));
 		if (this.#createError) out.push(row(this.#theme, this.#theme.fg("error", this.#createError), width));
 		out.push(divider(this.#theme, width));
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(false)), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
@@ -592,8 +644,10 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 				width,
 			),
 		);
+		const status = this.#statusText();
+		if (status) out.push(row(this.#theme, this.#theme.fg(status.color, status.text), width));
 		out.push(divider(this.#theme, width));
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(false)), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
@@ -609,11 +663,11 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 
 		const browser = this.#pickModelBrowser;
 		if (browser) {
-			browser.setMaxVisible(Math.max(MIN_LIST_ROWS, this.#tui.terminal.rows - 9));
+			browser.setMaxVisible(Math.max(1, this.#tui.terminal.rows - 9));
 			for (const line of browser.render(inner)) out.push(row(this.#theme, line, width));
 		}
 
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(false)), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
@@ -629,15 +683,16 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 				width,
 			),
 		);
+		const status = this.#statusText();
+		const chromeRows = 5 + (status ? 1 : 0);
 		const list = this.#pickEffortList;
 		if (list) {
-			list.setMaxVisible(8);
+			list.setMaxVisible(Math.min(8, Math.max(1, this.#tui.terminal.rows - chromeRows)));
 			for (const line of list.render(inner)) out.push(row(this.#theme, line, width));
 		}
-		const status = this.#statusText();
 		if (status) out.push(row(this.#theme, this.#theme.fg(status.color, status.text), width));
 		out.push(divider(this.#theme, width));
-		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText()), width));
+		out.push(row(this.#theme, this.#theme.fg("dim", this.#footerText(false)), width));
 		out.push(bottomBorder(this.#theme, width));
 		return out;
 	}
@@ -742,11 +797,17 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	}
 
 	#handleSearchInput(data: string): void {
+		const preferredProfileId = this.#currentProfile?.id;
+		const normalizeAfterQueryChange = () => {
+			if (!preferredProfileId) this.#sidebarIndex = 0;
+			this.#normalizeSidebar(preferredProfileId);
+		};
+
 		if (isEscape(data)) {
 			this.#searchQuery = "";
 			this.#mode = "browse";
 			this.#panel = "profiles";
-			this.#normalizeSidebar();
+			normalizeAfterQueryChange();
 			return;
 		}
 		if (isEnter(data)) {
@@ -757,7 +818,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		if (matchesKey(data, "backspace")) {
 			if (this.#searchQuery.length > 0) {
 				this.#searchQuery = [...this.#searchQuery].slice(0, -1).join("");
-				this.#normalizeSidebar();
+				normalizeAfterQueryChange();
 			}
 			return;
 		}
@@ -765,7 +826,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		if (text === undefined) return;
 		if (this.#searchQuery.length === 0 && text.trim().length === 0) return;
 		this.#searchQuery += text;
-		this.#normalizeSidebar();
+		normalizeAfterQueryChange();
 	}
 
 	async #handleDeleteInput(data: string): Promise<void> {
@@ -818,10 +879,8 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#createSuggestedName = undefined;
 		this.#mode = "browse";
 		this.#notice = `Created ${profile.name}`;
-		const index = this.#filteredProfiles.findIndex(p => p.id === profile.id);
-		if (index >= 0) this.#sidebarIndex = index;
 		this.#selectedRole = undefined;
-		this.#normalizeSidebar();
+		this.#normalizeSidebar(profile.id);
 	}
 
 	#cancelCreate(): void {
@@ -877,7 +936,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#renameError = undefined;
 		this.#mode = "browse";
 		this.#notice = `Renamed to ${profile.name}`;
-		this.#normalizeSidebar();
+		this.#normalizeSidebar(profile.id);
 	}
 
 	#cancelRename(): void {
@@ -1020,7 +1079,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#closePickModel();
 		this.#selectedRole = role;
 		this.#notice = `Updated ${roleDisplayName(role, this.#deps.settings)}`;
-		this.#normalizeSidebar();
+		this.#normalizeSidebar(profile.id);
 	}
 
 	#closePickModel(): void {
@@ -1122,7 +1181,12 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 	}
 
 	get #orderedProfiles(): ModelProfile[] {
-		const currentById = new Map(this.#deps.store.profiles.map(profile => [profile.id, profile]));
+		const profiles = this.#deps.store.profiles;
+		return this.#orderProfiles(profiles);
+	}
+
+	#orderProfiles(profiles: readonly ModelProfile[]): ModelProfile[] {
+		const currentById = new Map(profiles.map(profile => [profile.id, profile]));
 		const ordered: ModelProfile[] = [];
 		const included = new Set<string>();
 		for (const id of this.#profileOrder) {
@@ -1131,7 +1195,7 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 			ordered.push(profile);
 			included.add(id);
 		}
-		for (const profile of this.#deps.store.profiles) {
+		for (const profile of profiles) {
 			if (included.has(profile.id)) continue;
 			ordered.push(profile);
 			included.add(profile.id);
@@ -1179,13 +1243,11 @@ export class ProfilesDialog<M extends PickerModel = PickerModel> implements Comp
 		this.#rebuildLists();
 	}
 
-	#normalizeSidebar(): void {
+	#normalizeSidebar(preferredProfileId?: string): void {
 		const items = this.#sidebarItems;
-		const current = items[this.#sidebarIndex];
-		const currentId = current?.kind === "profile" ? current.profile.id : undefined;
-		if (currentId) {
-			const index = items.findIndex(item => item.kind === "profile" && item.profile.id === currentId);
-			this.#sidebarIndex = index >= 0 ? index : clamp(0, 0, items.length - 1);
+		if (preferredProfileId !== undefined) {
+			const index = items.findIndex(item => item.kind === "profile" && item.profile.id === preferredProfileId);
+			this.#sidebarIndex = index >= 0 ? index : 0;
 		} else {
 			this.#sidebarIndex = clamp(this.#sidebarIndex, 0, Math.max(0, items.length - 1));
 		}

@@ -77,6 +77,49 @@ describe("ProfileStore", () => {
 		expect(reloaded.profiles[0]?.models.default).toBe("anthropic/claude:low");
 	});
 
+	test("preserves a __proto__ role through load, mutation, and reload", async () => {
+		await writeFile(
+			path.join(dir, "model-profiles.yml"),
+			[
+				"version: 1",
+				"profiles:",
+				"  - id: p1",
+				"    name: Work",
+				"    models:",
+				"      __proto__: provider/model:high",
+				"      default: provider/default",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+
+		const store = new ProfileStore({ agentDir: dir });
+		const loaded = await store.load();
+		const profile = loaded.profiles[0];
+		expect(profile).toBeDefined();
+		expect(Object.hasOwn(profile?.models ?? {}, "__proto__")).toBe(true);
+		expect(profile?.models["__proto__"]).toBe("provider/model:high");
+		expect(profile?.models.default).toBe("provider/default");
+
+		await store.rename("p1", "Renamed");
+		const renamed = await new ProfileStore({ agentDir: dir }).load();
+		expect(renamed.profiles[0]?.name).toBe("Renamed");
+		expect(renamed.profiles[0]?.models["__proto__"]).toBe("provider/model:high");
+
+		const updatedStore = new ProfileStore({ agentDir: dir });
+		await updatedStore.load();
+		await updatedStore.setModel("p1", "__proto__", "provider/model:low");
+		const updated = await new ProfileStore({ agentDir: dir }).load();
+		expect(updated.profiles[0]?.models["__proto__"]).toBe("provider/model:low");
+
+		const clearedStore = new ProfileStore({ agentDir: dir });
+		await clearedStore.load();
+		await clearedStore.setModel("p1", "__proto__", undefined);
+		const cleared = await new ProfileStore({ agentDir: dir }).load();
+		expect(Object.hasOwn(cleared.profiles[0]?.models ?? {}, "__proto__")).toBe(false);
+		expect(cleared.profiles[0]?.models.default).toBe("provider/default");
+	});
+
 	test("blank and duplicate names are rejected without persisting", async () => {
 		const store = new ProfileStore({ agentDir: dir });
 		await store.load();
